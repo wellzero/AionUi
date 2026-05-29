@@ -22,6 +22,8 @@ import { repairCronJobTimeZone } from '@renderer/pages/cron/repairCronJobTimeZon
 import { getActivityTime } from '@/renderer/utils/chat/timeline';
 import { mutate } from 'swr';
 import { getConversationRuntimeWorkspaceErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
+import { runRemoteAgentCronJob } from '@renderer/pages/cron/utils/runRemoteAgentCronJob';
+import type { RemoteAgentConfig } from '@/common/types/agent/remoteAgentTypes';
 
 const TaskDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -36,6 +38,7 @@ const TaskDetailPage: React.FC = () => {
   const isManualOnly = job?.schedule.kind === 'cron' && !job.schedule.expr;
   const { conversations } = useCronJobConversations(job_id);
   const { cliAgents } = useConversationAgents();
+  const [remoteAgents, setRemoteAgents] = useState<RemoteAgentConfig[]>([]);
 
   const fetchJob = useCallback(async () => {
     if (!job_id) return;
@@ -53,6 +56,13 @@ const TaskDetailPage: React.FC = () => {
   useEffect(() => {
     void fetchJob();
   }, [fetchJob]);
+
+  useEffect(() => {
+    ipcBridge.remoteAgent.list
+      .invoke()
+      .then((agents) => setRemoteAgents(agents))
+      .catch((err) => console.error('[TaskDetailPage] Failed to fetch remote agents:', err));
+  }, []);
 
   // Auto-refresh when the job is updated or executed
   useEffect(() => {
@@ -88,6 +98,25 @@ const TaskDetailPage: React.FC = () => {
     if (!job) return;
     setRunningNow(true);
     try {
+      // Remote agents: bypass the backend's broken `type: 'remote'` executor
+      // and create an `openclaw-gateway` conversation directly.
+      const isRemoteAgent = job.metadata.agent_config?.backend === 'remote';
+      if (isRemoteAgent) {
+        const conversationId = await runRemoteAgentCronJob({
+          jobName: job.name,
+          payloadText: job.target.payload.text,
+          workspace: job.metadata.agent_config?.workspace,
+          remoteAgents,
+          agentName: job.metadata.agent_config?.name || '',
+          cronJobId: job.id,
+        });
+        if (conversationId) {
+          Message.success(t('cron.runNowSuccess'));
+          navigate(`/conversation/${conversationId}`);
+        }
+        return;
+      }
+
       const result = await ipcBridge.cron.runNow.invoke({ job_id: job.id });
       Message.success(t('cron.runNowSuccess'));
       if (result?.conversation_id) {
@@ -142,7 +171,7 @@ const TaskDetailPage: React.FC = () => {
     } finally {
       setRunningNow(false);
     }
-  }, [job, t, navigate]);
+  }, [job, t, navigate, remoteAgents]);
 
   const handleDelete = useCallback(async () => {
     if (!job) return;

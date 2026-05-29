@@ -25,6 +25,7 @@ import { WorkspaceFolderSelect } from '@renderer/components/workspace';
 import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents, type AgentMetadata } from '@renderer/utils/model/agentTypes';
 import { createCronSchedule } from '@renderer/pages/cron/cronUtils';
 import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
+import type { RemoteAgentConfig } from '@/common/types/agent/remoteAgentTypes';
 
 const FormItem = Form.Item;
 const TextArea = Input.TextArea;
@@ -118,10 +119,19 @@ function getDescriptionInitialValue(job: ICronJob): string {
 /**
  * Infer the agent selection key from an ICronJob's agent_config.
  */
-function getAgentKeyFromJob(job: ICronJob, cliAgents: { backend?: string; agent_type: string }[]): string | undefined {
+function getAgentKeyFromJob(
+  job: ICronJob,
+  cliAgents: { backend?: string; agent_type: string }[],
+  remoteAgents: RemoteAgentConfig[]
+): string | undefined {
   const config = job.metadata.agent_config;
   if (config) {
     if (config.is_preset && config.custom_agent_id) return `preset:${config.custom_agent_id}`;
+    // Remote agent: backend is 'remote' and custom_agent_id matches a remote agent
+    if (config.backend === 'remote' && config.custom_agent_id) {
+      const matched = remoteAgents.find((ra) => ra.id === config.custom_agent_id);
+      if (matched) return `remote:${config.custom_agent_id}`;
+    }
     // For ACP agents config.backend is the vendor label (e.g. "claude");
     // for aionrs it's a provider hash — match against the agent list to decide.
     const matched = cliAgents.find((a) => (a.backend || a.agent_type) === config.backend);
@@ -162,6 +172,13 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   // Available agents from backend `/api/agents`, shared across SWR cache.
   const { data: detectedAgents } = useSWR<AgentMetadata[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
 
+  // Remote agents from `/api/remote-agents`
+  const REMOTE_AGENTS_SWR_KEY = '/api/remote-agents';
+  const fetchRemoteAgents = useCallback(async (): Promise<RemoteAgentConfig[]> => {
+    return ipcBridge.remoteAgent.list.invoke();
+  }, []);
+  const { data: remoteAgents } = useSWR<RemoteAgentConfig[]>(REMOTE_AGENTS_SWR_KEY, fetchRemoteAgents);
+
   // Populate form when entering edit mode
   useEffect(() => {
     if (!visible) return;
@@ -181,7 +198,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
             Object.keys(editJob.metadata.agent_config.config_options).length > 0)
         )
       );
-      const agentKey = getAgentKeyFromJob(editJob, cliAgents);
+      const agentKey = getAgentKeyFromJob(editJob, cliAgents, remoteAgents || []);
       setSelectedAgent(agentKey);
       form.setFieldsValue({
         name: editJob.name,
@@ -206,9 +223,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
       setWorkspace(undefined);
       setSelectedAgent(undefined);
     }
-  }, [visible, editJob, form]);
+  }, [visible, editJob, form, cliAgents, remoteAgents]);
 
-  // Resolve backend from selectedAgent (handles both CLI and preset agents)
+  // Resolve backend from selectedAgent (handles CLI, preset, and remote agents)
   const resolvedBackend = useMemo(() => {
     if (!selectedAgent) return undefined;
     const colonIdx = selectedAgent.indexOf(':');
@@ -218,6 +235,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     if (agentKind === 'preset') {
       const assistant = presetAssistants.find((a) => a.id === agentId);
       return assistant?.preset_agent_type;
+    }
+    if (agentKind === 'remote') {
+      return 'remote';
     }
     // CLI agent: agentId is the backend
     return agentId;
@@ -428,6 +448,18 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           workspace,
         };
       }
+    } else if (agentKind === 'remote') {
+      const agent = remoteAgents?.find((ra) => ra.id === agentId);
+      if (agent) {
+        resolvedAgentType = 'remote' as ICreateCronJobParams['agent_type'];
+        agent_config = {
+          backend: 'remote',
+          name: agent.name,
+          custom_agent_id: agent.id,
+          mode: getFullAutoMode('remote'),
+          workspace,
+        };
+      }
     }
 
     return { agent_config, resolvedAgentType };
@@ -561,6 +593,11 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                       logo = <span className='text-14px leading-16px'>{assistant.avatar}</span>;
                     }
                   }
+                } else if (type === 'remote') {
+                  const agent = remoteAgents?.find((ra) => ra.id === id);
+                  if (agent) {
+                    name = agent.name;
+                  }
                 }
                 return (
                   <div className='flex items-center gap-8px'>
@@ -620,6 +657,18 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                       </Option>
                     );
                   })}
+                </OptGroup>
+              )}
+              {remoteAgents && remoteAgents.length > 0 && (
+                <OptGroup label={t('conversation.dropdown.remoteAgents', { defaultValue: 'Remote Agents' })}>
+                  {remoteAgents.map((agent) => (
+                    <Option key={`remote:${agent.id}`} value={`remote:${agent.id}`}>
+                      <div className='flex items-center gap-8px'>
+                        <Robot size='16' />
+                        <span>{agent.name}</span>
+                      </div>
+                    </Option>
+                  ))}
                 </OptGroup>
               )}
             </Select>

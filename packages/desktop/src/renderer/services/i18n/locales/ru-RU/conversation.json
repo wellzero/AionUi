@@ -86,7 +86,8 @@
   },
   "dropdown": {
     "cliAgents": "CLI-агенты",
-    "presetAssistants": "Предустановленные ассистенты"
+    "presetAssistants": "Предустановленные ассистенты",
+    "remoteAgents": "Удаленные агенты"
   },
   "noAgentsAvailable": "Нет доступных агентов",
   "noModelConfigured": "Модель не настроена. Настройте в параметрах.",

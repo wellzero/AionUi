@@ -86,7 +86,8 @@
   },
   "dropdown": {
     "cliAgents": "CLI Агенти",
-    "presetAssistants": "Встановлені асистенти"
+    "presetAssistants": "Встановлені асистенти",
+    "remoteAgents": "Віддалені агенти"
   },
   "noAgentsAvailable": "Немає доступних агентів",
   "noModelConfigured": "Модель не налаштована. Будь ласка, налаштуйте в параметрах.",

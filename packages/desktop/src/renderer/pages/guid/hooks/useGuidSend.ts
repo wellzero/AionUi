@@ -8,6 +8,7 @@ import { ipcBridge } from '@/common';
 import type { IMcpServer, TProviderWithModel } from '@/common/config/storage';
 import { buildAgentConversationParams } from '@/common/utils/buildAgentConversationParams';
 import { toSessionMcpServer } from '@/renderer/hooks/mcp/catalog';
+import { resolveRemoteAgentToken } from '@/renderer/pages/guid/utils/resolveRemoteAgentToken';
 import { emitter } from '@/renderer/utils/emitter';
 import { updateWorkspaceTime } from '@/renderer/utils/workspace/workspaceHistory';
 import { Message } from '@arco-design/web-react';
@@ -310,6 +311,66 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
       return;
     }
 
+    // Remote OpenClaw agent path
+    if (selectedAgent === 'remote' && selectedAgentInfo?.url) {
+      const remoteUrl = selectedAgentInfo.url;
+      let remoteHost: string;
+      let remotePort: string;
+      try {
+        const parsed = new URL(remoteUrl);
+        remoteHost = parsed.hostname || '127.0.0.1';
+        remotePort = parsed.port || '80';
+      } catch {
+        remoteHost = '127.0.0.1';
+        remotePort = '80';
+      }
+      const token = await resolveRemoteAgentToken(remoteUrl);
+      if (!token) {
+        alert('Failed to resolve remote agent auth token. Please ensure the OpenClaw gateway config is accessible.');
+        return;
+      }
+      const remoteConversationParams = {
+        type: 'openclaw-gateway' as const,
+        name: input,
+        model: current_model!,
+        extra: {
+          workspace: finalWorkspace,
+          custom_workspace: isCustomWorkspace,
+          gateway: {
+            host: remoteHost,
+            port: Number(remotePort),
+            token,
+          },
+          default_files: files,
+          exclude_auto_inject_skills: excludeBuiltinSkills,
+          ...(guidEnabledSkills?.length ? { preset_enabled_skills: guidEnabledSkills } : {}),
+        },
+      };
+      try {
+        const conversation = await ipcBridge.conversation.create.invoke(remoteConversationParams);
+        if (!conversation || !conversation.id) {
+          console.error('Failed to create remote conversation - conversation object is null or missing id');
+          return;
+        }
+        if (isCustomWorkspace) {
+          updateWorkspaceTime(finalWorkspace);
+        }
+        emitter.emit('chat.history.refresh');
+        const initialMessage = {
+          input,
+          files: files.length > 0 ? files : undefined,
+        };
+        sessionStorage.setItem(`openclaw-gateway_initial_message_${conversation.id}`, JSON.stringify(initialMessage));
+        await navigate(`/conversation/${conversation.id}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('Failed to create remote conversation:', errorMessage);
+        alert(`Failed to create remote conversation: ${errorMessage}`);
+        throw error;
+      }
+      return;
+    }
+
     // Remaining agent path (ACP/remote/custom, including preset fallbacks)
     {
       // Agent-type fallback only applies to preset assistants whose primary agent
@@ -343,7 +404,9 @@ export const useGuidSend = (deps: GuidSendDeps): GuidSendResult => {
         workspace: finalWorkspace,
         model: current_model!,
         cli_path: acpAgentInfo?.cli_path,
-        custom_agent_id: acpAgentInfo?.custom_agent_id,
+        custom_agent_id:
+          acpAgentInfo?.custom_agent_id ||
+          (selectedAgentKey?.startsWith('remote:') ? selectedAgentKey.slice(7) : undefined),
         custom_workspace: isCustomWorkspace,
         is_preset,
         preset_agent_type: finalEffectiveAgentType,

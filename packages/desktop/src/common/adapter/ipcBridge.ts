@@ -1400,6 +1400,7 @@ export interface ICreateConversationParams {
     };
     /** Legacy marker for pre-provider-probe health-check conversations. */
     is_health_check?: boolean;
+    remoteAgentId?: string;
     remote_agent_id?: string;
     extra_skill_paths?: string[];
     team_id?: string;

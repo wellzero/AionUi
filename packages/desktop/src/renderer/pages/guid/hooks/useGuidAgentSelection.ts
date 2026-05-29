@@ -290,6 +290,7 @@ export const useGuidAgentSelection = ({
       id: ra.id,
       custom_agent_id: ra.id,
       avatar: ra.avatar,
+      url: ra.url,
     }));
     setAvailableAgents([...normalisedDetected, ...remoteAsAvailable]);
   }, [availableAgentsData, remoteAgentsData]);

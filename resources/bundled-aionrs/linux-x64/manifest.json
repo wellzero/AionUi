@@ -1,0 +1,12 @@
+{
+  "platform": "linux",
+  "arch": "x64",
+  "version": "aionrs 0.1.25",
+  "generatedAt": "2026-05-22T15:49:40.813Z",
+  "sourceType": "download",
+  "source": {
+    "url": "https://github.com/iOfficeAI/aionrs/releases/download/v0.1.25/aionrs-v0.1.25-x86_64-unknown-linux-gnu.tar.gz"
+  },
+  "files": ["aionrs"],
+  "skipped": false
+}
