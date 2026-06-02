@@ -29,6 +29,7 @@ import AcpModelSelector from '@/renderer/components/agent/AcpModelSelector';
 import { saveAionrsDefaultModel } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
+import { buildDefaultConversationName } from '@/renderer/pages/conversation/utils/newConversationName';
 import GoogleModelSelector from '../platforms/gemini/GoogleModelSelector';
 import AionrsChat from '../platforms/aionrs/AionrsChat';
 import AionrsModelSelector from '../platforms/aionrs/AionrsModelSelector';
@@ -109,10 +110,12 @@ const _AddNewConversation: React.FC<{ conversation: TChatConversation }> = ({ co
             // Fetch latest conversation from DB to ensure session_mode is current
             const latest = await getConversationOrNull(conversation.id);
             const source = latest || conversation;
+            const defaultName = t('conversation.welcome.newConversation');
             await ipcBridge.conversation.createWithConversation.invoke({
               conversation: {
                 ...source,
                 id,
+                name: buildDefaultConversationName(defaultName),
                 created_at: Date.now(),
                 modified_at: Date.now(),
                 // Clear ACP session fields to prevent new conversation from inheriting old session context
