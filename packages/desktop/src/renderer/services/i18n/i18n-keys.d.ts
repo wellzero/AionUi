@@ -402,6 +402,7 @@ export type I18nKey =
   | 'conversation.createFailed'
   | 'conversation.dropdown.cliAgents'
   | 'conversation.dropdown.presetAssistants'
+  | 'conversation.dropdown.remoteAgents'
   | 'conversation.history.batchDelete'
   | 'conversation.history.batchDeleteConfirm'
   | 'conversation.history.batchDeleteSuccess'
