@@ -42,6 +42,7 @@ import '@/common/adapter/browser';
 import type { PropsWithChildren } from 'react';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import type { TFunction } from 'i18next';
 
 // Context providers
 import { AuthProvider } from './hooks/context/AuthContext';
@@ -50,7 +51,7 @@ import { ThemeProvider } from './hooks/context/ThemeContext';
 import { PreviewProvider } from './pages/conversation/Preview/context/PreviewContext';
 
 // Arco Design
-import { Button, ConfigProvider, Modal, Typography } from '@arco-design/web-react';
+import { ConfigProvider, Modal, Typography } from '@arco-design/web-react';
 // Configure Arco Design to use React 18's createRoot, fixing Message component's CopyReactDOM.render error
 import '@arco-design/web-react/es/_util/react-19-adapter';
 import '@arco-design/web-react/dist/css/arco.css';
@@ -92,9 +93,15 @@ import { useAuth } from './hooks/context/AuthContext';
 import { ConversationHistoryProvider } from './hooks/context/ConversationHistoryContext';
 import HOC from './utils/ui/HOC';
 import type { BackendStartupFailureInfo } from '@/common/types/platform/electron';
-import type { IRuntimeStatusEvent } from '@/common/adapter/ipcBridge';
-
-const AIONUI_DOWNLOAD_URL = 'https://www.aionui.com/';
+import type { IRuntimeStatusEvent, RuntimeFailureKind } from '@/common/adapter/ipcBridge';
+import {
+  InstallationIntegrityContent,
+  InstallationIntegrityModalHost,
+  getBackendStartupInstallationDescription,
+  getDownloadLatestModalActionProps,
+  getRuntimeComponentInstallationDescription,
+  showInstallationIntegrityModal,
+} from './components/layout/InstallationIntegrityDialog';
 
 // Patch Korean locale with missing properties from English locale
 const koKRComplete = {
@@ -124,6 +131,47 @@ const arcoLocales: Record<string, typeof enUS> = {
   'en-US': enUS,
 };
 
+const INSTALLATION_INTEGRITY_FAILURES = new Set<RuntimeFailureKind>([
+  'bundled_resource_missing',
+  'bundled_resource_invalid',
+  'validation_failed',
+]);
+
+function isInstallationIntegrityFailure(kind: RuntimeFailureKind | undefined): boolean {
+  return INSTALLATION_INTEGRITY_FAILURES.has(kind ?? 'unknown');
+}
+
+function captureRuntimeInstallationIntegrityFailure(event: IRuntimeStatusEvent): void {
+  if (!isInstallationIntegrityFailure(event.failure_kind)) {
+    return;
+  }
+
+  void import('@sentry/electron/renderer')
+    .then((Sentry) => {
+      Sentry.withScope((scope) => {
+        scope.setTag('aionui.installation_integrity', event.failure_kind ?? 'unknown');
+        scope.setTag('aionui.runtime_resource', event.resource);
+        scope.setTag('aionui.runtime_resource_id', event.resource_id ?? '');
+        scope.setTag('aionui.runtime_scope', event.scope.kind);
+        Sentry.captureMessage('runtime-installation-integrity-failure', 'error');
+      });
+    })
+    .catch(() => {});
+}
+
+function resolveRuntimeResourceLabel(event: IRuntimeStatusEvent, t: TFunction): string {
+  if (event.resource === 'node') {
+    return t('settings.runtimeResource.node');
+  }
+  if (event.resource_id === 'codex-acp') {
+    return t('settings.runtimeResource.codexAcp');
+  }
+  if (event.resource_id === 'claude-agent-acp') {
+    return t('settings.runtimeResource.claudeAgentAcp');
+  }
+  return t('settings.runtimeResource.acpTool');
+}
+
 const RuntimeFailureDialogs: React.FC = () => {
   const { t } = useTranslation();
   const [modal, modalContextHolder] = Modal.useModal();
@@ -147,9 +195,20 @@ const RuntimeFailureDialogs: React.FC = () => {
       }
       shownFailuresRef.current.add(signature);
 
+      const resource = resolveRuntimeResourceLabel(event, t);
+      const installationIntegrityFailure = isInstallationIntegrityFailure(event.failure_kind);
+      const description = installationIntegrityFailure
+        ? getRuntimeComponentInstallationDescription(t, resource)
+        : t('settings.runtimeStatus.failedUnknown', { resource });
+      if (installationIntegrityFailure) {
+        captureRuntimeInstallationIntegrityFailure(event);
+        showInstallationIntegrityModal(modal, t, description);
+        return;
+      }
+
       modal.error({
-        title: t('common.backendStartup.incompleteInstallation.title'),
-        content: t('common.backendStartup.incompleteInstallation.description'),
+        title: t('common.error'),
+        content: <InstallationIntegrityContent description={description} />,
         okText: t('common.confirm'),
         closable: false,
         maskClosable: false,
@@ -236,33 +295,46 @@ const BackendStartupFailureDialog: React.FC<{ failure: BackendStartupFailureInfo
   const { t } = useTranslation();
 
   const isIncompatibleRuntime = failure.reason === 'backend_incompatible_runtime';
-  const title = isIncompatibleRuntime
-    ? t('common.backendStartup.incompatibleRuntime.title')
-    : t('common.backendStartup.incompleteInstallation.title');
+  const isPackageArchitectureMismatch = failure.reason === 'backend_package_architecture_mismatch';
+  const title = t('common.backendStartup.incompatibleRuntime.title');
   const description = isIncompatibleRuntime
     ? t('common.backendStartup.incompatibleRuntime.description')
-    : t('common.backendStartup.incompleteInstallation.description');
+    : isPackageArchitectureMismatch
+      ? t('common.backendStartup.packageArchitectureMismatch.description', {
+          packageArch: failure.packageArch ?? 'x64',
+          deviceArch: failure.deviceArch ?? 'arm64',
+          expectedArch: failure.expectedDownloadArch ?? 'arm64',
+        })
+      : getBackendStartupInstallationDescription(t);
   const requiredVersions = failure.requiredVersions?.map((version) => `GLIBC_${version}`).join(', ');
 
-  const handleDownload = () => {
-    window.open(AIONUI_DOWNLOAD_URL, '_blank', 'noopener,noreferrer');
-  };
+  if (!isIncompatibleRuntime && !isPackageArchitectureMismatch) {
+    return (
+      <div className='min-h-screen bg-bg-1'>
+        <InstallationIntegrityModalHost description={description} />
+      </div>
+    );
+  }
+
+  if (isPackageArchitectureMismatch) {
+    return (
+      <div className='min-h-screen bg-bg-1'>
+        <Modal
+          visible
+          closable={false}
+          maskClosable={false}
+          title={t('common.backendStartup.packageArchitectureMismatch.title')}
+          {...getDownloadLatestModalActionProps(t)}
+        >
+          <InstallationIntegrityContent description={description} />
+        </Modal>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen bg-bg-1'>
-      <Modal
-        visible
-        closable={false}
-        maskClosable={false}
-        footer={
-          isIncompatibleRuntime ? null : (
-            <Button type='primary' onClick={handleDownload}>
-              {t('common.backendStartup.incompleteInstallation.downloadLatest')}
-            </Button>
-          )
-        }
-        title={title}
-      >
+      <Modal visible closable={false} maskClosable={false} footer={null} title={title}>
         <div className='text-t-1'>
           <Typography.Paragraph className='mb-0 text-t-secondary'>{description}</Typography.Paragraph>
           {requiredVersions ? (
@@ -283,6 +355,7 @@ const backendStartupFailure = window.__backendStartupFailure;
 const shouldShowBackendStartupFailureDialog =
   backendStartupFailure?.reason === 'backend_incompatible_runtime' ||
   backendStartupFailure?.reason === 'backend_incomplete_installation' ||
+  backendStartupFailure?.reason === 'backend_package_architecture_mismatch' ||
   backendStartupFailure?.reason === 'backend_startup_failed';
 if (backendStartupFailure && shouldShowBackendStartupFailureDialog) {
   root.render(

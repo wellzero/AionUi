@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcBridge } from '@/common';
 import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import { CODEX_MODE_NATIVE_FULL_ACCESS, normalizeCodexMode } from '@/common/types/codex/codexModes';
 import type { IProvider } from '@/common/config/storage';
 import { configService } from '@/common/config/configService';
+import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { AcpSessionModes } from '@/common/types/platform/acpTypes';
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
@@ -25,6 +25,7 @@ import { savePreferredMode, savePreferredModelId, getAgentKey as getAgentKeyUtil
 import { usePresetAssistantResolver } from './usePresetAssistantResolver';
 import { useAgentAvailability } from './useAgentAvailability';
 import { useCustomAgentsLoader } from './useCustomAgentsLoader';
+import { isSupportedNewConversationAgent } from '@/renderer/utils/model/agentTypeSupportPolicy';
 
 export type GuidAgentSelectionResult = {
   selectedAgentKey: string;
@@ -251,7 +252,6 @@ export const useGuidAgentSelection = ({
   const selectedAgent: string = ((): string => {
     if (selectedAgentKey.startsWith('custom:')) return 'custom';
     const info = availableAgents?.find((a) => a.id === selectedAgentKey);
-    if (info?.agent_type === 'remote') return 'remote';
     if (info?.agent_source === 'custom') return 'custom';
     return selectedAgentKey;
   })();
@@ -274,16 +274,18 @@ export const useGuidAgentSelection = ({
     // tokens / preset resolver). Custom-row `icon` is a user-picked emoji,
     // exposed as `avatar` so AgentPillBar renders the glyph directly
     // instead of mistaking it for a logo URL.
-    const normalisedDetected: AvailableAgent[] = availableAgentsData.map((a) => {
-      const asAgent = a as AgentMetadata;
-      const isCustomRow = asAgent.agent_source === 'custom';
-      return {
-        ...a,
-        id: asAgent.id,
-        custom_agent_id: isCustomRow ? asAgent.id : (a as AvailableAgent).custom_agent_id,
-        avatar: isCustomRow ? asAgent.icon : (a as AvailableAgent).avatar,
-      };
-    });
+    const normalisedDetected: AvailableAgent[] = availableAgentsData
+      .filter(isSupportedNewConversationAgent)
+      .map((a) => {
+        const asAgent = a as AgentMetadata;
+        const isCustomRow = asAgent.agent_source === 'custom';
+        return {
+          ...a,
+          id: asAgent.id,
+          custom_agent_id: isCustomRow ? asAgent.id : (a as AvailableAgent).custom_agent_id,
+          avatar: isCustomRow ? asAgent.icon : (a as AvailableAgent).avatar,
+        };
+      });
     const remoteAsAvailable: AvailableAgent[] = (remoteAgentsData || []).map((ra) => ({
       agent_type: 'remote',
       name: ra.name,

@@ -13,6 +13,7 @@
  */
 
 import type { IConfirmation } from '@/common/chat/chatLib';
+import type { AcpSlashCommandApiItem } from '@/common/chat/slash/types';
 import { bridge } from '@office-ai/platform';
 import type { OpenDialogOptions } from 'electron';
 import type {
@@ -21,6 +22,7 @@ import type {
   IProvider,
   ISessionMcpServer,
   TChatConversation,
+  TConversationRuntimeSummary,
   TProviderWithModel,
 } from '../config/storage';
 import type {
@@ -41,7 +43,6 @@ import type {
   ProviderHealthCheckResponse,
   UpdateProviderRequest,
 } from '../types/provider/providerApi';
-import type { SpeechToTextRequest, SpeechToTextResult } from '../types/provider/speech';
 import type {
   ITeamAgentRemovedEvent,
   ITeamAgentRenamedEvent,
@@ -61,6 +62,7 @@ import type {
   UpdateDownloadRequest,
   UpdateDownloadResult,
 } from '../update/updateTypes';
+import type { Theme } from '@/common/theme/types';
 import type { ProtocolDetectionRequest, ProtocolDetectionResponse } from '../utils/protocolDetector';
 import { fromApiConversation, fromApiPaginatedConversations, toApiModelOptional } from './apiModelMapper';
 import {
@@ -196,7 +198,10 @@ export const conversation = {
   ),
   reset: httpPost<void, IResetConversationParams>((p) => `/api/conversations/${p.id}/reset`),
   warmup: httpPost<void, { conversation_id: string }>((p) => `/api/conversations/${p.conversation_id}/warmup`),
-  stop: httpPost<void, { conversation_id: string }>((p) => `/api/conversations/${p.conversation_id}/cancel`),
+  stop: httpPost<{ runtime: TConversationRuntimeSummary }, { conversation_id: string; turn_id: string }>(
+    (p) => `/api/conversations/${p.conversation_id}/cancel`,
+    (p) => ({ turn_id: p.turn_id })
+  ),
   activeCount: httpGet<{ count: number }>('/api/conversations/active-count'),
   sendMessage: httpPost<ISendMessageResult, ISendMessageParams>(
     (p) => `/api/conversations/${p.conversation_id}/messages`,
@@ -207,7 +212,7 @@ export const conversation = {
       inject_skills: p.inject_skills,
     })
   ),
-  getSlashCommands: httpGet<Array<{ command: string; description: string }>, { conversation_id: string }>(
+  getSlashCommands: httpGet<AcpSlashCommandApiItem[], { conversation_id: string }>(
     (p) => `/api/conversations/${p.conversation_id}/slash-commands`
   ),
   askSideQuestion: httpPost<ConversationSideQuestionResult, { conversation_id: string; question: string }>(
@@ -263,6 +268,7 @@ export const conversation = {
         rawRuntime.taskStatus) as IConversationTurnCompletedEvent['runtime']['task_status'],
       is_processing: (rawRuntime.is_processing ?? rawRuntime.isProcessing ?? false) as boolean,
       pending_confirmations: (rawRuntime.pending_confirmations ?? rawRuntime.pendingConfirmations ?? 0) as number,
+      turn_id: (rawRuntime.turn_id ?? rawRuntime.turnId ?? null) as string | null,
     };
     const rawModel = (r.model ?? {}) as Record<string, unknown>;
     const model: IConversationTurnCompletedEvent['model'] = {
@@ -272,6 +278,7 @@ export const conversation = {
     };
     return {
       session_id: (r.session_id ?? r.sessionId ?? r.conversation_id ?? '') as string,
+      turn_id: (r.turn_id ?? r.turnId ?? runtime.turn_id ?? '') as string,
       status: (r.status ?? 'finished') as IConversationTurnCompletedEvent['status'],
       state: (r.state ??
         (r.status === 'finished' ? 'ai_waiting_input' : 'unknown')) as IConversationTurnCompletedEvent['state'],
@@ -360,6 +367,8 @@ export type RuntimeFailureKind =
   | 'checksum_mismatch'
   | 'validation_failed'
   | 'unsupported_platform'
+  | 'bundled_resource_missing'
+  | 'bundled_resource_invalid'
   | 'unknown';
 
 export interface IRuntimeStatusScope {
@@ -396,6 +405,12 @@ export interface IGpuStatus {
   lastCrashAt: number | null;
 }
 
+export interface IAppRestartResult {
+  restarted: boolean;
+  manualRestartRequired: boolean;
+  reason?: 'dev-mode';
+}
+
 export type IRendererLogLevel = 'info' | 'warn' | 'error';
 
 export interface IRendererLogEntry {
@@ -410,7 +425,7 @@ export interface IRendererLogEntry {
 // ---------------------------------------------------------------------------
 
 export const application = {
-  restart: bridge.buildProvider<void, void>('restart-app'),
+  restart: bridge.buildProvider<IAppRestartResult, void>('restart-app'),
   openDevTools: bridge.buildProvider<boolean, void>('open-dev-tools'),
   isDevToolsOpened: bridge.buildProvider<boolean, void>('is-dev-tools-opened'),
   systemInfo: withResponseMap(
@@ -428,7 +443,9 @@ export const application = {
   getPath: bridge.buildProvider<string, { name: 'desktop' | 'home' | 'downloads' }>('app.get-path'),
   // Electron-local: copies cache dir + persists to ProcessEnv, paired with restart.
   // The backend reads AIONUI_*_DIR env vars on boot, so it does not own this config.
-  updateSystemInfo: bridge.buildProvider<void, { cacheDir: string; workDir: string }>('update-system-info'),
+  updateSystemInfo: bridge.buildProvider<void, { cacheDir: string; workDir: string; logDir?: string }>(
+    'update-system-info'
+  ),
   getZoomFactor: bridge.buildProvider<number, void>('app.get-zoom-factor'),
   setZoomFactor: bridge.buildProvider<number, { factor: number }>('app.set-zoom-factor'),
   getCdpStatus: bridge.buildProvider<IBridgeResponse<ICdpStatus>, void>('app.get-cdp-status'),
@@ -588,14 +605,6 @@ export const fs = {
   ),
   enableSkillsMarket: httpPost<void, void>('/api/skills/market/enable'),
   disableSkillsMarket: httpPost<void, void>('/api/skills/market/disable'),
-};
-
-// ---------------------------------------------------------------------------
-// Speech to Text — routed to backend
-// ---------------------------------------------------------------------------
-
-export const speechToText = {
-  transcribe: httpPost<SpeechToTextResult, SpeechToTextRequest>('/api/stt'),
 };
 
 // ---------------------------------------------------------------------------
@@ -1092,6 +1101,19 @@ export const windowControls = {
 };
 
 // ---------------------------------------------------------------------------
+// Theme — stays IPC (main process owns the resolved-theme cache)
+// ---------------------------------------------------------------------------
+
+export const theme = {
+  // main → all renderers: the resolved active theme changed
+  changed: bridge.buildEmitter<Theme>('theme:changed'),
+  // renderer → main: publish a newly resolved theme (main caches + re-emits `changed`)
+  setActive: bridge.buildProvider<void, Theme>('theme:set-active'),
+  // any window → main: pull the currently cached resolved theme on load (null if none yet)
+  requestCurrent: bridge.buildProvider<Theme | null, void>('theme:request-current'),
+};
+
+// ---------------------------------------------------------------------------
 // System Settings — routed to /api/settings/* unless they need Electron-native side effects.
 // ---------------------------------------------------------------------------
 
@@ -1335,6 +1357,8 @@ interface ISendMessageParams {
 // local state aligns with DB rows and WebSocket stream events.
 export interface ISendMessageResult {
   msg_id: string;
+  turn_id: string;
+  runtime: TConversationRuntimeSummary;
 }
 
 export interface IConfirmMessageParams {
@@ -1345,7 +1369,7 @@ export interface IConfirmMessageParams {
 }
 
 export interface ICreateConversationParams {
-  type: 'acp' | 'codex' | 'openclaw-gateway' | 'nanobot' | 'remote' | 'aionrs';
+  type: 'acp' | 'aionrs' | 'remote' | 'openclaw-gateway';
   id?: string;
   name?: string;
   model: TProviderWithModel;
@@ -1439,6 +1463,7 @@ export interface IResponseMessage {
   type: string;
   data: unknown;
   msg_id: string;
+  turn_id: string;
   conversation_id: string;
   created_at?: number;
   hidden?: boolean;
@@ -1487,6 +1512,7 @@ export type IConversationArtifact = ICronTriggerArtifact | ISkillSuggestArtifact
 
 export interface IConversationTurnCompletedEvent {
   session_id: string;
+  turn_id: string;
   status: 'pending' | 'running' | 'finished';
   state:
     | 'ai_generating'
@@ -1505,6 +1531,7 @@ export interface IConversationTurnCompletedEvent {
     task_status?: 'pending' | 'running' | 'finished';
     is_processing: boolean;
     pending_confirmations: number;
+    turn_id: string | null;
   };
   workspace: string;
   model: {

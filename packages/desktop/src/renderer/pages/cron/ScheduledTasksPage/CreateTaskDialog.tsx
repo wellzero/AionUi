@@ -26,6 +26,7 @@ import { DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents, type AgentMetadata } from
 import { createCronSchedule } from '@renderer/pages/cron/cronUtils';
 import { getConversationCreateErrorMessage } from '@renderer/pages/conversation/utils/conversationCreateError';
 import type { RemoteAgentConfig } from '@/common/types/agent/remoteAgentTypes';
+import { resolveSupportedConversationType } from '@renderer/utils/model/agentTypeSupportPolicy';
 
 const FormItem = Form.Item;
 const TextArea = Input.TextArea;
@@ -393,8 +394,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     const agentId = colonIdx >= 0 ? agentValue.substring(colonIdx + 1) : agentValue;
 
     let agent_config: ICronAgentConfig | undefined;
-    let resolvedAgentType: ICreateCronJobParams['agent_type'] = (agent_type ||
-      'claude') as ICreateCronJobParams['agent_type'];
+    let resolvedAgentType: ICreateCronJobParams['agent_type'] = resolveSupportedConversationType(agent_type || 'acp');
 
     if (agentKind === 'cli') {
       const agent = cliAgents.find((a) => a.backend === agentId || a.agent_type === agentId);
@@ -417,7 +417,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
         };
       } else if (agent?.agent_type === 'acp') {
         const capitalizedBackend = backend.charAt(0).toUpperCase() + backend.slice(1);
-        resolvedAgentType = backend as string;
+        resolvedAgentType = 'acp';
         agent_config = {
           // cli_path is no longer sent from the frontend — the backend
           // resolves it server-side from the `agent_metadata` catalog.
@@ -429,13 +429,13 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
           workspace,
         };
       } else if (agent) {
-        resolvedAgentType = backend as ICreateCronJobParams['agent_type'];
+        resolvedAgentType = resolveSupportedConversationType(backend);
       }
     } else if (agentKind === 'preset') {
       const assistant = presetAssistants.find((a) => a.id === agentId);
       if (assistant) {
         const presetBackend = assistant.preset_agent_type;
-        resolvedAgentType = presetBackend as string;
+        resolvedAgentType = resolveSupportedConversationType(presetBackend);
         agent_config = {
           backend: presetBackend as string,
           name: assistant.name,
