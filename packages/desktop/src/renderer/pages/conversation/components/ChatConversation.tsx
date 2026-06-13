@@ -261,6 +261,25 @@ const ChatConversation: React.FC<{
             }
           ></AcpChat>
         );
+      case 'openclaw-gateway':
+      case 'remote':
+        return (
+          <AcpChat
+            key={conversation.id}
+            conversation_id={conversation.id}
+            workspace={conversation.extra?.workspace}
+            backend={(conversation.extra as { backend?: string } | undefined)?.backend || conversation.type}
+            session_mode={(conversation.extra as { session_mode?: string } | undefined)?.session_mode}
+            agent_name={assistantDisplayName}
+            cron_job_id={(conversation.extra as { cron_job_id?: string })?.cron_job_id}
+            hideSendBox={resolvedHideSendBox}
+            loadedSkills={(conversation.extra as { skills?: string[] } | undefined)?.skills}
+            loadedMcpServers={(conversation.extra as { mcp_servers?: string[] } | undefined)?.mcp_servers}
+            loadedMcpStatuses={
+              (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
+            }
+          ></AcpChat>
+        );
       default:
         return null;
     }
