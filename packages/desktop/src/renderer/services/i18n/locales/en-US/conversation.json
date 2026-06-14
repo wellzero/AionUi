@@ -86,7 +86,8 @@
   },
   "dropdown": {
     "cliAgents": "CLI Agents",
-    "presetAssistants": "Preset Assistants"
+    "presetAssistants": "Preset Assistants",
+    "remoteAgents": "Remote Agents"
   },
   "noAgentsAvailable": "No agents available",
   "noModelConfigured": "No model configured. Please configure in settings.",

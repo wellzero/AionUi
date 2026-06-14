@@ -4,6 +4,7 @@ import { ipcBridge } from '@/common';
 import { deriveAutoTitleFromMessages } from '@/renderer/utils/chat/autoTitle';
 import { emitter } from '@/renderer/utils/emitter';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
+import { buildDefaultConversationName } from '@/renderer/pages/conversation/utils/newConversationName';
 
 export const useAutoTitle = () => {
   const { t } = useTranslation();
@@ -13,7 +14,15 @@ export const useAutoTitle = () => {
       const defaultTitle = t('conversation.welcome.newConversation');
       try {
         const conversation = await getConversationOrNull(conversation_id);
-        if (!conversation || conversation.name !== defaultTitle) {
+        if (!conversation) {
+          return;
+        }
+        // Recognise both the bare default title and the date-augmented variant
+        // (e.g. "New Chat · Jun 2") as "still untitled" so auto-title can run.
+        const currentName = conversation.name;
+        const isStillDefault =
+          currentName === defaultTitle || currentName === buildDefaultConversationName(defaultTitle);
+        if (!isStillDefault) {
           return;
         }
 

@@ -86,7 +86,8 @@
   },
   "dropdown": {
     "cliAgents": "CLI Agents",
-    "presetAssistants": "プリセットアシスタント"
+    "presetAssistants": "プリセットアシスタント",
+    "remoteAgents": "リモートエージェント"
   },
   "noAgentsAvailable": "利用可能なエージェントはありません",
   "noModelConfigured": "モデルが設定されていません。設定ページで設定してください。",

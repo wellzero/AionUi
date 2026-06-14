@@ -8,6 +8,7 @@ import { DEFAULT_CODEX_MODELS } from '@/common/types/codex/codexModels';
 import { CODEX_MODE_NATIVE_FULL_ACCESS, normalizeCodexMode } from '@/common/types/codex/codexModes';
 import type { IProvider } from '@/common/config/storage';
 import { configService } from '@/common/config/configService';
+import { ipcBridge } from '@/common';
 import type { Assistant } from '@/common/types/agent/assistantTypes';
 import type { AcpSessionModes } from '@/common/types/platform/acpTypes';
 import type { AcpModelInfo, AvailableAgent, EffectiveAgentInfo } from '../types';
@@ -274,6 +275,9 @@ export const useGuidAgentSelection = ({
   // --- SWR: Fetch detected execution engines (shared cache) ---
   const { data: availableAgentsData } = useSWR<AvailableAgent[]>(DETECTED_AGENTS_SWR_KEY, fetchDetectedAgents);
 
+  // Fetch remote agents from DB and merge into available agents
+  const { data: remoteAgentsData } = useSWR('remote-agents.list', () => ipcBridge.remoteAgent.list.invoke());
+
   useEffect(() => {
     if (!availableAgentsData) return;
     // Normalise backend /api/agents rows into AvailableAgent shape.
@@ -287,14 +291,23 @@ export const useGuidAgentSelection = ({
       .map((a) => {
         const asAgent = a as AgentMetadata;
         const isCustomRow = asAgent.agent_source === 'custom';
-        return Object.assign({}, a, {
+        return {
+          ...a,
           id: asAgent.id,
           custom_agent_id: isCustomRow ? asAgent.id : (a as AvailableAgent).custom_agent_id,
           avatar: isCustomRow ? asAgent.icon : (a as AvailableAgent).avatar,
-        });
+        };
       });
-    setAvailableAgents(normalisedDetected);
-  }, [availableAgentsData]);
+    const remoteAsAvailable: AvailableAgent[] = (remoteAgentsData || []).map((ra) => ({
+      agent_type: 'remote',
+      name: ra.name,
+      id: ra.id,
+      custom_agent_id: ra.id,
+      avatar: ra.avatar,
+      url: ra.url,
+    }));
+    setAvailableAgents([...normalisedDetected, ...remoteAsAvailable]);
+  }, [availableAgentsData, remoteAgentsData]);
 
   // Track whether the resetAssistant flag has been consumed so it only fires once
   // per navigation. Use locationKey (changes on every navigate()) to reset the guard,

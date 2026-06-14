@@ -44,7 +44,7 @@ vi.mock('@/renderer/pages/conversation/Preview', () => ({
   usePreviewContext: () => ({ openPreview: vi.fn() }),
 }));
 
-function legacyConversation(type: 'gemini' | 'codex' | 'openclaw-gateway' | 'nanobot' | 'remote'): TChatConversation {
+function legacyConversation(type: 'gemini' | 'codex' | 'nanobot'): TChatConversation {
   return {
     id: `conv-${type}`,
     user_id: 'user-1',
@@ -61,15 +61,12 @@ function legacyConversation(type: 'gemini' | 'codex' | 'openclaw-gateway' | 'nan
 }
 
 describe('ChatConversation legacy runtime rendering', () => {
-  it.each(['gemini', 'codex', 'openclaw-gateway', 'nanobot', 'remote'] as const)(
-    'renders %s history without the old runtime chat',
-    (type) => {
-      render(<ChatConversation conversation={legacyConversation(type)} />);
+  it.each(['gemini', 'codex', 'nanobot'] as const)('renders %s history without the old runtime chat', (type) => {
+    render(<ChatConversation conversation={legacyConversation(type)} />);
 
-      expect(screen.getByText('message history')).toBeInTheDocument();
-      expect(screen.queryByTestId('legacy-openclaw-chat')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('legacy-nanobot-chat')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('legacy-remote-chat')).not.toBeInTheDocument();
-    }
-  );
+    expect(screen.getByText('message history')).toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-openclaw-chat')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-nanobot-chat')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('legacy-remote-chat')).not.toBeInTheDocument();
+  });
 });

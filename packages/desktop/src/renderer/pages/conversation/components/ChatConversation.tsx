@@ -26,6 +26,7 @@ import AcpModelSelector from '@/renderer/components/agent/AcpModelSelector';
 import { saveAionrsDefaultModel } from '@/renderer/pages/guid/hooks/agentSelectionUtils';
 import { getConversationOrNull } from '@/renderer/pages/conversation/utils/conversationCache';
 import { getConversationCreateErrorMessage } from '@/renderer/pages/conversation/utils/conversationCreateError';
+import { buildDefaultConversationName } from '@/renderer/pages/conversation/utils/newConversationName';
 import GoogleModelSelector from '../platforms/gemini/GoogleModelSelector';
 import AionrsChat from '../platforms/aionrs/AionrsChat';
 import AionrsModelSelector from '../platforms/aionrs/AionrsModelSelector';
@@ -107,10 +108,12 @@ const _AddNewConversation: React.FC<{ conversation: TChatConversation }> = ({ co
             // Fetch latest conversation from DB to ensure session_mode is current
             const latest = await getConversationOrNull(conversation.id);
             const source = latest || conversation;
+            const defaultName = t('conversation.welcome.newConversation');
             await ipcBridge.conversation.createWithConversation.invoke({
               conversation: {
                 ...source,
                 id,
+                name: buildDefaultConversationName(defaultName),
                 created_at: Date.now(),
                 modified_at: Date.now(),
                 // Clear ACP session fields to prevent new conversation from inheriting old session context
@@ -259,6 +262,25 @@ const ChatConversation: React.FC<{
               (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
             }
             assistantId={acpAssistantId}
+          ></AcpChat>
+        );
+      case 'openclaw-gateway':
+      case 'remote':
+        return (
+          <AcpChat
+            key={conversation.id}
+            conversation_id={conversation.id}
+            workspace={conversation.extra?.workspace}
+            backend={(conversation.extra as { backend?: string } | undefined)?.backend || conversation.type}
+            session_mode={(conversation.extra as { session_mode?: string } | undefined)?.session_mode}
+            agent_name={assistantDisplayName}
+            cron_job_id={(conversation.extra as { cron_job_id?: string })?.cron_job_id}
+            hideSendBox={resolvedHideSendBox}
+            loadedSkills={(conversation.extra as { skills?: string[] } | undefined)?.skills}
+            loadedMcpServers={(conversation.extra as { mcp_servers?: string[] } | undefined)?.mcp_servers}
+            loadedMcpStatuses={
+              (conversation.extra as { mcp_statuses?: IConversationMcpStatus[] } | undefined)?.mcp_statuses
+            }
           ></AcpChat>
         );
       default:

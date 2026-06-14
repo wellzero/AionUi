@@ -38,6 +38,8 @@ export type AvailableAgent = {
   presetAgentType?: string;
   isExtension?: boolean;
   extensionName?: string;
+  /** Remote agent WebSocket URL (only for agent_type === 'remote') */
+  url?: string;
 };
 
 /**

@@ -36,7 +36,16 @@ export type BuildAgentConversationInput = {
 };
 
 export function getConversationTypeForBackend(backend: string): ICreateConversationParams['type'] {
-  return backend === 'aionrs' ? 'aionrs' : 'acp';
+  switch (backend) {
+    case 'aionrs':
+      return 'aionrs';
+    case 'remote':
+      return 'remote';
+    case 'openclaw-gateway':
+      return 'openclaw-gateway';
+    default:
+      return 'acp';
+  }
 }
 
 export function buildAgentConversationParams(input: BuildAgentConversationInput): ICreateConversationParams {
@@ -73,6 +82,17 @@ export function buildAgentConversationParams(input: BuildAgentConversationInput)
     extra.preset_assistant_id = effectivePresetAssistantId;
     if (type === 'acp') {
       extra.backend = effectivePresetType as string;
+    }
+  } else if (type === 'remote') {
+    extra.remoteAgentId = custom_agent_id;
+    extra.remote_agent_id = custom_agent_id;
+  } else if (type === 'openclaw-gateway') {
+    extra.agent_name = agent_name || name;
+    extra.gateway = {
+      cli_path,
+    };
+    if (custom_agent_id) {
+      extra.custom_agent_id = custom_agent_id;
     }
   } else if (type === 'acp') {
     extra.backend = backend as string;
