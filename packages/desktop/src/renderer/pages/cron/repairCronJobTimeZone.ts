@@ -50,6 +50,10 @@ export async function repairCronJobTimeZone(job: ICronJob): Promise<ICronJob> {
 }
 
 export async function repairCronJobTimeZones(jobs: ICronJob[]): Promise<ICronJob[]> {
+  if (!Array.isArray(jobs)) {
+    console.error('[cron] repairCronJobTimeZones received non-array jobs:', jobs);
+    return [];
+  }
   return Promise.all(jobs.map((job) => repairCronJobTimeZone(job)));
 }
 

@@ -24,6 +24,10 @@ export const useAssistantList = () => {
   const loadAssistants = useCallback(async () => {
     try {
       const list = await ipcBridge.assistants.list.invoke();
+      if (!Array.isArray(list)) {
+        console.error('Failed to load assistants: backend returned non-array', list);
+        return;
+      }
       setAssistants(list);
       setActiveAssistantId((prev) => {
         if (prev && list.some((a) => a.id === prev)) return prev;

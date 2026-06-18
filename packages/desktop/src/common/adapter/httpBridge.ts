@@ -219,6 +219,20 @@ export async function httpRequest<T>(
   }
 
   const json = await response.json();
+  // Guard against backend placeholder responses that look like
+  // { message: "API endpoint - bridge integration working" }. They are 200 OK
+  // but not valid data, so treat them as backend errors so callers' existing
+  // try/catch paths fall back to empty defaults.
+  if (
+    json &&
+    typeof json === 'object' &&
+    !Array.isArray(json) &&
+    'message' in json &&
+    typeof (json as Record<string, unknown>).message === 'string' &&
+    /API endpoint|bridge integration/i.test((json as Record<string, unknown>).message as string)
+  ) {
+    throw new BackendHttpError({ method, path, status: response.status, body: json });
+  }
   // Backend wraps in { success, data, ... } — unwrap when present
   if (json && typeof json === 'object' && 'data' in json) {
     return json.data as T;

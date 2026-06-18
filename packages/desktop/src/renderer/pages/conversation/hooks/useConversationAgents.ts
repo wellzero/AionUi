@@ -41,7 +41,7 @@ export const useConversationAgents = (): UseConversationAgentsResult => {
   const { data: presetAssistants, isLoading: isLoadingPresets } = useSWR('assistants.presets', async () => {
     try {
       const list = await ipcBridge.assistants.list.invoke();
-      return list.filter((assistant) => assistant.enabled !== false);
+      return Array.isArray(list) ? list.filter((assistant) => assistant.enabled !== false) : ([] as Assistant[]);
     } catch (error) {
       console.error('Failed to load assistants for conversation selector:', error);
       return [] as Assistant[];

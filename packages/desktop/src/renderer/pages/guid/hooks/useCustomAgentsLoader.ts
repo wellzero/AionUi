@@ -74,7 +74,7 @@ export const useCustomAgentsLoader = ({
       return [] as Assistant[];
     }
   });
-  const assistants = assistantList ?? [];
+  const assistants = Array.isArray(assistantList) ? assistantList : [];
 
   useEffect(() => {
     void swrMutate('assistants.list');

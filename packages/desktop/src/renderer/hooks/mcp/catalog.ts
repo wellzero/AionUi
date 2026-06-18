@@ -98,7 +98,8 @@ export const ensureBackendMcpCatalog = async (): Promise<{
     ? (settings['mcp.config'] as IMcpServer[])
     : (configService.get('mcp.config') ?? []);
   const builtinServers = dedupeServers(localServers.filter(isBuiltinServer));
-  let userServers = dedupeServers(await mcpService.listServers.invoke());
+  const rawUserServers = await mcpService.listServers.invoke();
+  let userServers = dedupeServers(Array.isArray(rawUserServers) ? rawUserServers : []);
 
   if (userServers.length === 0) {
     const legacyUserServers = localServers.filter((server) => !isBuiltinServer(server));
