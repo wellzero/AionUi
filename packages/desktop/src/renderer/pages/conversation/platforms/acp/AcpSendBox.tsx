@@ -640,10 +640,14 @@ Please check your local CLI tool authentication status`,
         }}
         loading={teamRuntime?.loading ?? isBusy}
         disabled={false}
-        placeholder={t('acp.sendbox.placeholder', {
-          backend: agent_name || backend,
-          defaultValue: `Send message to {{backend}}...`,
-        })}
+        placeholder={
+          teamSendMessage
+            ? t('team.sendBox.placeholder', { defaultValue: 'Message dispatch agent...' })
+            : t('acp.sendbox.placeholder', {
+                backend: agent_name || backend,
+                defaultValue: `Send message to {{backend}}...`,
+              })
+        }
         onStop={effectiveHandleStop}
         className='z-10'
         onFilesAdded={handleFilesAdded}
