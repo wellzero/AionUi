@@ -113,8 +113,7 @@ export function toBackendAgent(a: Omit<TeamAgent, 'slot_id' | 'conversation_id'>
   return {
     name: a.agent_name,
     role: a.role === 'leader' ? 'lead' : a.role,
-    backend: a.agent_type,
+    assistant_id: a.assistant_id || a.agent_type,
     model: a.model || 'default',
-    ...(a.custom_agent_id ? { custom_agent_id: a.custom_agent_id } : {}),
   };
 }

@@ -18,6 +18,9 @@ import {
 export type TeamAgentOption = {
   id: string;
   name: string;
+  /** Backend assistant id sent to `POST /api/teams`. For CLI agents this is
+   *  `bare:<agent_id>`; for preset assistants it is the assistant id. */
+  assistant_id: string;
   /** Execution backend (claude, gemini, qwen, …). For assistants this is
    *  `preset_agent_type`; for CLI agents it's `backend`. */
   backend?: string;
@@ -33,6 +36,7 @@ export type TeamAgentOption = {
 export function cliAgentToOption(agent: AgentMetadata): TeamAgentOption {
   return {
     id: agent.id,
+    assistant_id: `bare:${agent.id}`,
     name: agent.name,
     backend: agent.backend || agent.agent_type,
     agent_type: agent.agent_type,
@@ -44,6 +48,7 @@ export function cliAgentToOption(agent: AgentMetadata): TeamAgentOption {
 export function assistantToOption(assistant: Assistant, teamCapableKeys?: Set<string>): TeamAgentOption {
   return {
     id: assistant.id,
+    assistant_id: assistant.id,
     name: assistant.name,
     backend: assistant.preset_agent_type,
     icon: assistant.avatar,

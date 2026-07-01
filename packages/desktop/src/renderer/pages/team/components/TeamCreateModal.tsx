@@ -169,7 +169,7 @@ const TeamCreateModal: React.FC<Props> = ({ visible, onClose, onCreated }) => {
         agent_type: dispatchAgentType,
         agent_name: 'Leader',
         conversation_type: dispatchConversationType,
-        custom_agent_id: dispatchAgent?.id,
+        assistant_id: dispatchAgent?.assistant_id,
         model: resolvedModel,
       });
 

@@ -26,6 +26,8 @@ export type TeamAgent = {
   status: TeammateStatus;
   cli_path?: string;
   custom_agent_id?: string;
+  /** Backend assistant id used when creating the team (`bare:<agent_id>` for CLI agents). */
+  assistant_id?: string;
   model?: string;
   pending_confirmations?: number;
 };
