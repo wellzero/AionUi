@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import useSWR from 'swr';
 import { useTranslation } from 'react-i18next';
 import { Form, Input, Select, Message, TimePicker, Radio, Button } from '@arco-design/web-react';
@@ -180,9 +180,20 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
   }, []);
   const { data: remoteAgents } = useSWR<RemoteAgentConfig[]>(REMOTE_AGENTS_SWR_KEY, fetchRemoteAgents);
 
-  // Populate form when entering edit mode
+  // Track whether create mode has already been initialised. The dialog
+  // unmounts on close, but guard against extra resets if the SWR agent lists
+  // finish loading after the user has already started filling the form.
+  const createModeInitialized = useRef(false);
+
+  // Populate form when opening (edit mode) or resetting (create mode).
+  // Deliberately NOT dependent on cliAgents/remoteAgents so that a late
+  // agent-list fetch does not wipe the user's input.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      createModeInitialized.current = false;
+      return;
+    }
+
     if (editJob) {
       const cronExpr = editJob.schedule.kind === 'cron' ? editJob.schedule.expr : '';
       const parsed = parseCronExpr(cronExpr);
@@ -199,32 +210,45 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
             Object.keys(editJob.metadata.agent_config.config_options).length > 0)
         )
       );
-      const agentKey = getAgentKeyFromJob(editJob, cliAgents, remoteAgents || []);
-      setSelectedAgent(agentKey);
       form.setFieldsValue({
         name: editJob.name,
         description: getDescriptionInitialValue(editJob),
         prompt: editJob.target.payload.text,
-        agent: agentKey,
       });
       // Populate advanced settings from editJob
       setModelId(editJob.metadata.agent_config?.model_id);
       setConfigOptions(editJob.metadata.agent_config?.config_options);
       setWorkspace(editJob.metadata.agent_config?.workspace);
-    } else {
-      form.resetFields();
-      setFrequency('manual');
-      setTime('09:00');
-      setWeekday('MON');
-      setCustomCronExpr('');
-      setExecutionMode('new_conversation');
-      setAdvancedOpen(false);
-      setModelId(undefined);
-      setConfigOptions(undefined);
-      setWorkspace(undefined);
-      setSelectedAgent(undefined);
+      return;
     }
-  }, [visible, editJob, form, cliAgents, remoteAgents]);
+
+    // Create mode: only reset once per mount.
+    if (createModeInitialized.current) {
+      return;
+    }
+    form.resetFields();
+    setFrequency('manual');
+    setTime('09:00');
+    setWeekday('MON');
+    setCustomCronExpr('');
+    setExecutionMode('new_conversation');
+    setAdvancedOpen(false);
+    setModelId(undefined);
+    setConfigOptions(undefined);
+    setWorkspace(undefined);
+    setSelectedAgent(undefined);
+    createModeInitialized.current = true;
+  }, [visible, editJob, form]);
+
+  // Resolve the agent dropdown key for edit mode once the agent catalogs are
+  // available. Kept separate so a later SWR revalidation does not overwrite
+  // other fields the user may have edited.
+  useEffect(() => {
+    if (!visible || !editJob) return;
+    const agentKey = getAgentKeyFromJob(editJob, cliAgents, remoteAgents || []);
+    setSelectedAgent(agentKey);
+    form.setFieldValue('agent', agentKey);
+  }, [visible, editJob, cliAgents, remoteAgents, form]);
 
   // Resolve backend from selectedAgent (handles CLI, preset, and remote agents)
   const resolvedBackend = useMemo(() => {
@@ -368,6 +392,8 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
     executionModeOptions.find((option) => option.value === execution_mode) ?? executionModeOptions[0];
   const showModelSelector = Boolean(resolvedBackend && (isGeminiMode || acpCachedModelInfo));
   const advancedFieldCount = Number(showModelSelector) + 1;
+  const isOriginalExistingConversationTask = isEditMode && editJob?.target.execution_mode === 'existing';
+  const canEditAgentConfig = !isOriginalExistingConversationTask && (!isEditMode || execution_mode !== 'existing');
 
   const handleFrequencyChange = (value: FrequencyType) => {
     setFrequency(value);
@@ -478,6 +504,15 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
 
       if (isEditMode) {
         // Edit mode: update existing job
+        const metadata: ICronJob['metadata'] = {
+          ...editJob!.metadata,
+          agent_type: resolvedAgentType,
+          updated_at: Date.now(),
+        };
+        if (canEditAgentConfig) {
+          metadata.agent_config = agent_config;
+        }
+
         await ipcBridge.cron.updateJob.invoke({
           job_id: editJob!.id,
           updates: {
@@ -489,12 +524,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
               payload: { kind: 'message', text: values.prompt },
               execution_mode,
             },
-            metadata: {
-              ...editJob!.metadata,
-              agent_type: resolvedAgentType,
-              agent_config,
-              updated_at: Date.now(),
-            },
+            metadata,
           },
         });
         Message.success(t('cron.page.updateSuccess'));
@@ -546,21 +576,19 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
             <Input placeholder={t('cron.page.form.namePlaceholder')} />
           </FormItem>
 
-          <FormItem
-            label={t('cron.page.form.description')}
-            field='description'
-            rules={[{ required: true, message: t('cron.page.form.descriptionRequired') }]}
-          >
+          <FormItem label={t('cron.page.form.description')} field='description'>
             <Input placeholder={t('cron.page.form.descriptionPlaceholder')} />
           </FormItem>
 
           <FormItem
             label={t('cron.page.form.agent')}
             field='agent'
-            rules={[{ required: true, message: t('cron.page.form.agentRequired') }]}
+            rules={canEditAgentConfig ? [{ required: true, message: t('cron.page.form.agentRequired') }] : []}
           >
             <Select
               placeholder={t('cron.page.form.agentPlaceholder')}
+              value={selectedAgent}
+              disabled={!canEditAgentConfig}
               onChange={handleAgentChange}
               renderFormat={(_option, value) => {
                 // Find selected agent to render logo + name in the trigger
@@ -803,6 +831,12 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({
                     triggerTestId='cron-workspace-trigger'
                     menuTestId='cron-workspace-menu'
                     menuZIndex={10020}
+                  />
+                  <Input
+                    className='mt-8px'
+                    value={workspace ?? ''}
+                    onChange={(value) => setWorkspace(value || undefined)}
+                    placeholder={t('cron.page.form.workspace')}
                   />
                 </div>
               </div>
